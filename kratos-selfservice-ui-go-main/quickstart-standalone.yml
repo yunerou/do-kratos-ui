@@ -1,0 +1,11 @@
+version: '3.7'
+
+services:
+  kratos-selfservice-ui-go:
+    ports:
+      - "4455:4455"
+    environment:
+      - PORT=4455
+      - SECURITY_MODE=
+      - KRATOS_BROWSER_URL=http://127.0.0.1/
+      - COOKIE_STORE_KEY_PAIRS=aEl+c9ZPjA92UYRIL5J0x/5XtIFHb53JSWZcGiZOf4I= OrbMtosgpCakYvp81RZ7mMuFewiDbeOdQkvp7l1kbYU=

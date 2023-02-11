@@ -1,0 +1,115 @@
+version: '3.7'
+
+services:
+  kratos-migrate:
+    image: oryd/kratos:v0.5.5-alpha.1.pre.1-sqlite
+    environment:
+      - DSN=sqlite:///var/lib/sqlite/db.sqlite?_fk=true&mode=rwc
+    volumes:
+      -
+        type: volume
+        source: kratos-sqlite
+        target: /var/lib/sqlite
+        read_only: false
+      -
+        type: bind
+        source: ./contrib/quickstart/kratos/email-password
+        target: /etc/config/kratos
+    command:
+      -c /etc/config/kratos/kratos.yml migrate sql -e --yes
+    restart: on-failure
+    networks:
+      - internal
+
+  kratos:
+    depends_on:
+      - kratos-migrate
+    image: oryd/kratos:v0.5.5-alpha.1.pre.1-sqlite
+    ports:
+      - "4433:4433" # public
+      - "4434:4434" # admin
+    restart: unless-stopped
+    environment:
+      - DSN=sqlite:///var/lib/sqlite/db.sqlite?_fk=true
+      - LOG_LEVEL=trace
+    command:
+      serve -c /etc/config/kratos/kratos.yml --dev
+    volumes:
+      -
+        type: volume
+        source: kratos-sqlite
+        target: /var/lib/sqlite
+        read_only: false
+      -
+        type: bind
+        source: ./contrib/quickstart/kratos/email-password
+        target: /etc/config/kratos
+    networks:
+      - internal
+    labels:
+      - "traefik.http.routers.kratos.rule=PathPrefix(`/sessions/`,`/self-service/`)"
+      - "traefik.docker.network=internal"
+      - "traefik.port=4433"
+      - "traefik.enable=true"
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - '8025:8025'
+      - '1025:1025'
+    networks:
+      - internal
+      - web
+
+  kratos-selfservice-ui-go:
+    image: davidoram/kratos-selfservice-ui-go:latest
+    environment:
+      - KRATOS_PUBLIC_URL=http://kratos:4433/
+      - KRATOS_ADMIN_URL=http://kratos:4434/
+      - BASE_URL=/
+      # Enable debug trace of Kratos API calls
+      - DEBUG=1
+    networks:
+      internal:
+        # the aliases are not required, but are useful if the applications want to internally
+        # reference each other by host name
+        aliases:
+        - "app1.test"
+    labels:
+      - "traefik.port=4455"
+      - "traefik.http.routers.kratos-selfservice-ui-go.rule=Path(`/`) || PathPrefix(`/dashboard`,`/auth`,`/static`)"
+      - "traefik.docker.network=internal"
+      - "traefik.enable=true"
+    restart: on-failure
+
+  traefik:
+    image: traefik:2.4
+    #command: --web --docker --docker.domain=app.test --logLevel=DEBUG
+    depends_on:
+      # our setup relies on the 3 apps running. Trying to spin up traefik will bring up those too
+      - "mailhog"
+      - "kratos"
+      - "kratos-selfservice-ui-go"
+    ports:
+      # access this with the correct Host header to access the respective container
+      - "80:80"
+      # management UI
+      - "8080:8080"
+    volumes:
+      # traefik does its magic by reading information about running containers from the docker socket
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./traefik.yml:/etc/traefik/traefik.yml
+    networks:
+      web:
+      internal:
+
+networks:
+  # everything that is *only* on "internal network" cannot talk to WAN
+  internal:
+    external: false
+  # add this network to a container to make it talk to the rest of the world
+  web:
+    external: true
+
+volumes:
+  kratos-sqlite:

@@ -1,0 +1,1 @@
+https://github.com/davidoram/kratos-selfservice-ui-go
